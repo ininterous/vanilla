@@ -305,11 +305,11 @@ trait Scene {
             $cz = $vp[2] * $wx + $vp[6] * $wy + $vp[10] * $wz + $vp[14];
             $cw = $vp[3] * $wx + $vp[7] * $wy + $vp[11] * $wz + $vp[15];
             $vy = [max($ndl, 0.0), max(-$ndl, 0.0), $spec];
-            if ($mode === 1 || $mode === 3) {
+            if ($mode === 1 || $mode === 3 || ($mode === 0 && $studs)) {
                 $vy[] = $g['uv'][$i][0];
                 $vy[] = $g['uv'][$i][1];
             }
-            if ($mode === 1 && $studs) {
+            if (($mode === 1 || $mode === 0 || $mode === 3) && $studs) {
                 $vy[] = $p[0];
                 $vy[] = $p[1];
                 $vy[] = $p[2];
@@ -332,13 +332,44 @@ trait Scene {
         }
         $nv = count($V[0][4]);
         $snap = 1 << $this->subpixelBits;
+        // recorta triangulos que cruzam o plano near (peças grandes passando pela camera nao somem)
+        $near = 0.1;
+        $T3 = [];
         for ($i = 0; $i + 2 < $n; $i += 3) {
-            $a = $V[$i];
-            $b = $V[$i + 1];
-            $c = $V[$i + 2];
-            if ($a[3] <= 1e-6 || $b[3] <= 1e-6 || $c[3] <= 1e-6) {
+            $poly = [$V[$i], $V[$i + 1], $V[$i + 2]];
+            if (min($poly[0][3], $poly[1][3], $poly[2][3]) >= $near) {
+                $T3[] = $poly;
                 continue;
             }
+            $cl = [];
+            for ($k = 0; $k < 3; $k++) {
+                $cu = $poly[$k];
+                $nx = $poly[($k + 1) % 3];
+                $ci = $cu[3] >= $near;
+                $ni = $nx[3] >= $near;
+                if ($ci) {
+                    $cl[] = $cu;
+                }
+                if ($ci !== $ni) {
+                    $f = ($near - $cu[3]) / ($nx[3] - $cu[3]);
+                    $vy = [];
+                    foreach ($cu[4] as $q => $x) {
+                        $vy[$q] = $x + ($nx[4][$q] - $x) * $f;
+                    }
+                    $cl[] = [
+                        $cu[0] + ($nx[0] - $cu[0]) * $f,
+                        $cu[1] + ($nx[1] - $cu[1]) * $f,
+                        $cu[2] + ($nx[2] - $cu[2]) * $f,
+                        $near,
+                        $vy
+                    ];
+                }
+            }
+            for ($k = 1; $k + 1 < count($cl); $k++) {
+                $T3[] = [$cl[0], $cl[$k], $cl[$k + 1]];
+            }
+        }
+        foreach ($T3 as [$a, $b, $c]) {
             $S = [];
             foreach ([$a, $b, $c] as $v) {
                 $iw = 1 / $v[3];

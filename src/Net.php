@@ -23,7 +23,6 @@ final class Net {
             $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
             $loc = (string)curl_getinfo($ch, CURLINFO_REDIRECT_URL);
             $err = curl_error($ch);
-            curl_close($ch);
             if ($ok && $code >= 200 && $code < 300) {
                 return $buf;
             }

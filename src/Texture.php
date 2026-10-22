@@ -10,6 +10,7 @@ final class Texture {
     public $maxLevel = 0;
     public $cut = true;
     public $hasAlpha = false;
+    public $rust = false;
 
     function __construct(Img $im, bool $hat = false) {
         if ($hat) {

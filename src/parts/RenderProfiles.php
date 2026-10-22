@@ -52,7 +52,7 @@ trait RenderProfiles {
     }
 
     private function materialSpecular($material): array {
-        if ($this->renderer === '2012') {
+        if ($this->renderer === '2012' && (empty($this->placeMaterials) || (int)$material === 256)) {
             return [self::KS, self::SPEC_EXP];
         }
         // MaterialGenerator::getSpecular: byte intensity, exponent. No normal maps here.

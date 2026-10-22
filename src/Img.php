@@ -96,7 +96,9 @@ final class Img {
             imagealphablending($g, false);
             imagesavealpha($g, true);
             $s = @imagescale($g, $tw, $th, IMG_BILINEAR_FIXED);
-            imagedestroy($g);
+            if (PHP_VERSION_ID < 80000) {
+                imagedestroy($g);
+            }
             if (!$s) {
                 return null;
             }
@@ -118,7 +120,9 @@ final class Img {
                 $px[] = $AL[($c >> 24) & 127] | ($c & 0xffffff);
             }
         }
-        imagedestroy($g);
+        if (PHP_VERSION_ID < 80000) {
+            imagedestroy($g);
+        }
         return new Img($w, $h, $px);
     }
 
@@ -156,7 +160,9 @@ final class Img {
         }
         if ($big) {
             $s = @imagescale($g, min($info[0], $maxSide), min($info[1], $maxSide), IMG_BILINEAR_FIXED);
-            imagedestroy($g);
+            if (PHP_VERSION_ID < 80000) {
+                imagedestroy($g);
+            }
             if (!$s) {
                 return null;
             }
@@ -181,7 +187,9 @@ final class Img {
                 $px[] = $AL[($c >> 24) & 127] | ($c & 0xffffff);
             }
         }
-        imagedestroy($g);
+        if (PHP_VERSION_ID < 80000) {
+            imagedestroy($g);
+        }
         return new Img($w, $h, $px);
     }
 
@@ -608,9 +616,13 @@ final class Img {
             imagealphablending($dst, true);
             imagecopy($dst, $src, 0, 0, 0, 0, $w, $h);
             imagejpeg($dst, null, 90);
-            imagedestroy($dst);
+            if (PHP_VERSION_ID < 80000) {
+                imagedestroy($dst);
+            }
         }
-        imagedestroy($src);
+        if (PHP_VERSION_ID < 80000) {
+            imagedestroy($src);
+        }
         $out = (string)ob_get_clean();
         return $out === '' ? null : $out;
     }

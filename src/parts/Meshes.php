@@ -224,6 +224,71 @@ trait Meshes {
         return $out;
     }
 
+    static function bevelBox(float $hx, float $hy, float $hz, float $b = 0.065): array {
+    $h = [$hx, $hy, $hz];
+    $b = min($b, min($h) * 0.49);
+    $out = ['pos' => [], 'nrm' => [], 'uv' => []];
+    $vert = function ($ax, $sa, $s) use ($h, $b) {
+        $p = [];
+        $n = [0, 0, 0];
+        $n[$ax] = $sa;
+        for ($i = 0; $i < 3; $i++) {
+            $p[$i] = $i === $ax ? $sa * $h[$i] : $s[$i] * ($h[$i] - $b);
+        }
+        return [$p, $n];
+    };
+    $tri = function ($V) use (&$out) {
+        $g = self::cross(self::sub($V[1][0], $V[0][0]), self::sub($V[2][0], $V[0][0]));
+        $m = [$V[0][1][0] + $V[1][1][0] + $V[2][1][0], $V[0][1][1] + $V[1][1][1] + $V[2][1][1], $V[0][1][2] + $V[1][1][2] + $V[2][1][2]];
+        if (self::dot($g, $m) < 0) {
+            $t = $V[1]; $V[1] = $V[2]; $V[2] = $t;
+        }
+        foreach ($V as $v) {
+            $out['pos'][] = $v[0];
+            $out['nrm'][] = $v[1];
+            $out['uv'][] = [0, 0];
+        }
+    };
+    $quad = function ($a, $b2, $c, $d) use ($tri) {
+        $tri([$a, $b2, $c]);
+        $tri([$a, $c, $d]);
+    };
+    // faces
+    for ($i = 0; $i < 3; $i++) {
+        $j = ($i + 1) % 3; $k = ($i + 2) % 3;
+        foreach ([-1, 1] as $si) {
+            $q = [];
+            foreach ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as [$sj, $sk]) {
+                $s = [0, 0, 0]; $s[$j] = $sj; $s[$k] = $sk;
+                $q[] = $vert($i, $si, $s);
+            }
+            $quad($q[0], $q[1], $q[2], $q[3]);
+        }
+    }
+    // arestas
+    for ($i = 0; $i < 3; $i++) {
+        $j = ($i + 1) % 3; $k = ($i + 2) % 3;
+        foreach ([-1, 1] as $si) {
+            foreach ([-1, 1] as $sj) {
+                $A = []; $B = [];
+                foreach ([-1, 1] as $sk) {
+                    $s = [0, 0, 0]; $s[$j] = $sj; $s[$k] = $sk;
+                    $A[] = $vert($i, $si, $s);
+                    $s = [0, 0, 0]; $s[$i] = $si; $s[$k] = $sk;
+                    $B[] = $vert($j, $sj, $s);
+                }
+                $quad($A[0], $A[1], $B[1], $B[0]);
+            }
+        }
+    }
+    // cantos
+    foreach ([-1, 1] as $sx) foreach ([-1, 1] as $sy) foreach ([-1, 1] as $sz) {
+        $s = [$sx, $sy, $sz];
+        $tri([$vert(0, $sx, $s), $vert(1, $sy, $s), $vert(2, $sz, $s)]);
+    }
+    return $out;
+}
+
     static function sphereMesh(float $rx, float $ry, float $rz): array {
         $out = ['pos' => [], 'nrm' => [], 'uv' => []];
         $S = 24;

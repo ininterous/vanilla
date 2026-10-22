@@ -176,6 +176,13 @@ final class Rbxm {
                 return ['ref' => $txt];
             case 'Content':
             case 'url':
+                $bin = self::child($el, 'binary');
+                if ($bin) {
+                    $b64 = base64_decode(preg_replace('/\s+/', '', $bin['text']), true);
+                    if ($b64 !== false && $b64 !== '') {
+                        return ['url' => '', 'data' => $b64];
+                    }
+                }
                 $u2 = self::child($el, 'url') ?: self::child($el, 'uri');
                 return ['url' => $u2 ? trim($u2['text']) : (count($el['kids']) ? '' : $txt)];
             default:
