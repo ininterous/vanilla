@@ -11,6 +11,13 @@ trait PlaceRender {
 
     // quantos studs cada repeticao da textura de material cobre
     const MATERIAL_TILE = 4.0;
+    // escala de uv dos .material originais (transform): numero = por stud, matriz = sobre a posicao (wood)
+    const ADD_SIGNED = [
+        'wood' => [[0.01699672, 0.1353425, -0.03733006], [-0.1155417, -0.07062286, -0.04077413]],
+        'woodplanks' => [[0.01699672, 0.1353425, -0.03733006], [-0.1155417, -0.07062286, -0.04077413]],
+        'slate' => 0.28, 'concrete' => 0.18, 'diamondplate' => 0.28,
+        'metal' => 0.06, 'foil' => 0.06, 'ice' => 0.06, 'grass' => 0.1,
+    ];
     const MATERIALS = [
         256 => 'plastic', 272 => 'smoothplastic', 288 => 'neon', 512 => 'wood', 528 => 'woodplanks',
         784 => 'marble', 800 => 'slate', 816 => 'concrete', 832 => 'granite', 848 => 'brick',
@@ -54,12 +61,16 @@ trait PlaceRender {
                 if (is_file($f)) {
                     $im = Img::decode((string)file_get_contents($f), self::MAX_IMAGE_SIDE);
                     if ($im) {
-                        if ($name !== 'corrodedmetal') {
-                            $wood = $name === 'wood' || $name === 'woodplanks';
-                            $this->normTex($im, $wood ? 245 : 225, $wood ? 0.9 : 2.2);
+                        $add = isset(self::ADD_SIGNED[$name]);
+                        if ($name !== 'corrodedmetal' && !$add) {
+                            $this->normTex($im);
                         }
                         $t = new Texture($im);
                         $t->repeat = true;
+                        if ($add) {
+                            $t->addSigned = true;
+                            $t->uvm = self::ADD_SIGNED[$name];
+                        }
                         $t->rust = ($name === 'corrodedmetal');
                         $this->matTex[$name] = $t;
                     }
@@ -192,6 +203,7 @@ private function normTex(Img $im, float $base = 225, float $k = 2.2): void {
 
 
     private $decalTex = [];
+    private $decalFail = 0;
 
     // decal numa face de peca comum: um quadrado levemente acima da face, com a imagem
     private function decalCall(Inst $d, array $pc, array $h, int $mat): ?array {
@@ -211,8 +223,9 @@ private function normTex(Img $im, float $base = 225, float $k = 2.2): void {
             if ($im) {
                 $t = new Texture($im, true);
                 $t->repeat = $tiled;
+                $this->placeNotes[] = 'decal ' . $im->w . 'x' . $im->h . ' alpha=' . ($t->hasAlpha ? 'sim' : 'nao') . ' ' . ($tiled ? 'tile' : 'decal');
             } else {
-                $this->placeNotes[] = 'decal nao carregou: ' . substr(is_array($tv) ? (string)($tv['url'] ?? '') : (string)$tv, 0, 60);
+                $this->decalFail++;
             }
             $this->decalTex[$url] = $t;
         }
@@ -285,9 +298,48 @@ private function normTex(Img $im, float $base = 225, float $k = 2.2): void {
         return $this->image($url, 0, true);
     }
 
+
+    // uv em coordenadas do MUNDO (como o Roblox): matriz 2x3 sobre a posicao, ou numero = tiles por stud projetado na face dominante
+    private static function worldUV(array $g, array $cf, $m): array {
+        $R = $cf['R'];
+        $t = $cf['p'];
+        $uv = [];
+        foreach ($g['pos'] as $i => $p) {
+            $w = [
+                $R[0] * $p[0] + $R[1] * $p[1] + $R[2] * $p[2] + $t[0],
+                $R[3] * $p[0] + $R[4] * $p[1] + $R[5] * $p[2] + $t[1],
+                $R[6] * $p[0] + $R[7] * $p[1] + $R[8] * $p[2] + $t[2],
+            ];
+            if (is_array($m)) {
+                $uv[$i] = [$m[0][0] * $w[0] + $m[0][1] * $w[1] + $m[0][2] * $w[2], $m[1][0] * $w[0] + $m[1][1] * $w[1] + $m[1][2] * $w[2]];
+                continue;
+            }
+            $n = $g['nrm'][$i];
+            $wn = [abs($R[0] * $n[0] + $R[1] * $n[1] + $R[2] * $n[2]), abs($R[3] * $n[0] + $R[4] * $n[1] + $R[5] * $n[2]), abs($R[6] * $n[0] + $R[7] * $n[1] + $R[8] * $n[2])];
+            if ($wn[1] >= $wn[0] && $wn[1] >= $wn[2]) {
+                $uv[$i] = [$w[0] * $m, $w[2] * $m];
+            } elseif ($wn[0] >= $wn[2]) {
+                $uv[$i] = [$w[2] * $m, $w[1] * $m];
+            } else {
+                $uv[$i] = [$w[0] * $m, $w[1] * $m];
+            }
+        }
+        $g['uv'] = $uv;
+        return $g;
+    }
+
     // uv de caixa pra textura de material: repete a cada MATERIAL_TILE studs
-    private static function boxUV(array $g, float $hx, float $hy, float $hz): array {
+    private static function boxUV(array $g, float $hx, float $hy, float $hz, $m = null): array {
         $k = self::MATERIAL_TILE;
+        if (is_array($m)) {
+            foreach ($g['pos'] as $i => $p) {
+                $g['uv'][$i] = [$m[0][0] * $p[0] + $m[0][1] * $p[1] + $m[0][2] * $p[2], $m[1][0] * $p[0] + $m[1][1] * $p[1] + $m[1][2] * $p[2]];
+            }
+            return $g;
+        }
+        if (is_numeric($m)) {
+            $k = 1.0 / $m;
+        }
         foreach ($g['pos'] as $i => $p) {
             $n = $g['nrm'][$i];
             $a = [abs($n[0]), abs($n[1]), abs($n[2])];
@@ -410,6 +462,8 @@ private function floorMap(array $sky, array $wn): int {
     // devolve um png (ceu + pecas)
     function renderPlace(string $bytes, int $W = 420, int $H = 230, int $SS = 2): string {
         $this->placeNotes = [];
+        $this->decalFail = 0;
+        $this->decalTex = [];
         $this->placeMaterials = true;
         $oldLighting = $this->lighting;
         try {
@@ -538,20 +592,23 @@ private function floorMap(array $sky, array $wn): int {
                     }
                 }
             }
-            $tex = $ball ? null : $this->materialTexture($mat);
-            $key = ($ball ? 's' : ($tex ? 't' : 'b')) . round($hx, 3) . ',' . round($hy, 3) . ',' . round($hz, 3);
+            $wood = !$ball && ($mat === 512 || $mat === 528);
+            $tex = ($ball || $wood) ? null : $this->materialTexture($mat);
+            $key = ($ball ? 's' : ($tex ? 't' . $mat : 'b')) . round($hx, 3) . ',' . round($hy, 3) . ',' . round($hz, 3);
             if (!isset($geo[$key])) {
                 if ($ball) {
                     $geo[$key] = self::sphereMesh($hx, $hy, $hz);
                 } else {
                     $g = self::bevelBox($hx, $hy, $hz);
-                    $geo[$key] = $tex ? self::boxUV($g, $hx, $hy, $hz) : $g;
+                    $geo[$key] = $g;
                 }
             }
             $studs = !$ball && (int)($p['TopSurface'] ?? 0) === 3;
             $rgb = $this->partRgb($p);
-            if ($tex) {
-                $calls[] = [$geo[$key], $pc, 3, null, $tex, $studs, [$hx, $hy, $hz], $rgb, $mat];
+            if ($wood) {
+                $calls[] = [$geo[$key], $pc, 5, null, null, false, null, $rgb, $mat];
+            } elseif ($tex) {
+                $calls[] = [self::worldUV($geo[$key], $pc, $tex->uvm ?? (1.0 / self::MATERIAL_TILE)), $pc, 3, null, $tex, $studs, [$hx, $hy, $hz], $rgb, $mat];
             } else {
                 $calls[] = [$geo[$key], $pc, 0, $rgb, null, $studs, [$hx, $hy, $hz], [1, 1, 1], $mat];
             }
@@ -637,6 +694,9 @@ private function floorMap(array $sky, array $wn): int {
                     (int)($top[2] + ($low[2] - $top[2]) * $k)
                 ));
             }
+        }
+        if ($this->decalFail) {
+            $this->placeNotes[] = $this->decalFail . ' decal(s) de asset do Roblox nao carregaram (ignorados)';
         }
         $fg = imagecreatefromstring($png);
         file_put_contents('dbg.txt', dechex(imagecolorat($fg,0,0)).' '.dechex(imagecolorat($im,0,0)).' '.($sky?'sky':'nosky'));

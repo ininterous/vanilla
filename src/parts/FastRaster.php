@@ -35,7 +35,36 @@ trait FastRaster {
             }
         }
 
+        // ruido 3d suave (lattice 32, repete) no lugar do noiseL8_32x32x32.dds do wood shader
+        $vnoise = function (float $x, float $y, float $z): float {
+            $x0 = (int)floor($x);
+            $y0 = (int)floor($y);
+            $z0 = (int)floor($z);
+            $fx = $x - $x0;
+            $fy = $y - $y0;
+            $fz = $z - $z0;
+            $fx = $fx * $fx * (3 - 2 * $fx);
+            $fy = $fy * $fy * (3 - 2 * $fy);
+            $fz = $fz * $fz * (3 - 2 * $fz);
+            $h = function (int $a, int $b, int $c): float {
+                $a = (($a % 32) + 32) % 32;
+                $b = (($b % 32) + 32) % 32;
+                $c = (($c % 32) + 32) % 32;
+                $n = ($a * 73856093) ^ ($b * 19349663) ^ ($c * 83492791);
+                $n = (($n ^ ($n >> 13)) * 1274126177) & 0x7fffffff;
+                return ($n ^ ($n >> 16)) / 2147483647.0;
+            };
+            $c00 = $h($x0, $y0, $z0) + ($h($x0 + 1, $y0, $z0) - $h($x0, $y0, $z0)) * $fx;
+            $c10 = $h($x0, $y0 + 1, $z0) + ($h($x0 + 1, $y0 + 1, $z0) - $h($x0, $y0 + 1, $z0)) * $fx;
+            $c01 = $h($x0, $y0, $z0 + 1) + ($h($x0 + 1, $y0, $z0 + 1) - $h($x0, $y0, $z0 + 1)) * $fx;
+            $c11 = $h($x0, $y0 + 1, $z0 + 1) + ($h($x0 + 1, $y0 + 1, $z0 + 1) - $h($x0, $y0 + 1, $z0 + 1)) * $fx;
+            $a = $c00 + ($c10 - $c00) * $fy;
+            $b = $c01 + ($c11 - $c01) * $fy;
+            return $a + ($b - $a) * $fz;
+        };
+
         $shade = function (array $T, float $x, float $y) use (
+            $vnoise,
             $amb,
             $key,
             $fill,
@@ -58,6 +87,9 @@ trait FastRaster {
             $g0 = ($P[2][0] * $x + $P[2][1] * $y + $P[2][2]) * $w;
             $g1 = ($P[3][0] * $x + $P[3][1] * $y + $P[3][2]) * $w;
             $g2 = ($P[4][0] * $x + $P[4][1] * $y + $P[4][2]) * $w;
+            $dr = 0.0;
+            $dg = 0.0;
+            $db = 0.0;
             if ($mode === 1) {
                 $u = ($P[5][0] * $x + $P[5][1] * $y + $P[5][2]) * $w;
                 $v = ($P[6][0] * $x + $P[6][1] * $y + $P[6][2]) * $w;
@@ -89,11 +121,48 @@ trait FastRaster {
                     $ar = $tint[0] * $s * (1 - $m) + $t[0] * 0.85 * $m;
                     $ag = $tint[1] * $s * (1 - $m) + $t[1] * 0.85 * $m;
                     $ab = $tint[2] * $s * (1 - $m) + $t[2] * 0.85 * $m;
+                } elseif ($T['tex']->addSigned) {
+                    $ar = $tint[0];
+                    $ag = $tint[1];
+                    $ab = $tint[2];
+                    $dr = $t[0] - 0.5;
+                    $dg = $t[1] - 0.5;
+                    $db = $t[2] - 0.5;
                 } else {
                     $ar = $t[0] * $tint[0];
                     $ag = $t[1] * $tint[1];
                     $ab = $t[2] * $tint[2];
                 }
+            } elseif ($mode === 5) {
+                // wood.cgh: aneis ao redor do eixo do grao, cor = WoodColor + WoodContrast * (MixedColorRatio - r)
+                $wx = ($P[5][0] * $x + $P[5][1] * $y + $P[5][2]) * $w;
+                $wy = ($P[6][0] * $x + $P[6][1] * $y + $P[6][2]) * $w;
+                $wz = ($P[7][0] * $x + $P[7][1] * $y + $P[7][2]) * $w;
+                $dyx = ($P[6][0] - $wy * $iwA) * $w * $dk;
+                $dzx = ($P[7][0] - $wz * $iwA) * $w * $dk;
+                $dyy = ($P[6][1] - $wy * $iwB) * $w * $dk;
+                $dzy = ($P[7][1] - $wz * $iwB) * $w * $dk;
+                $aa = sqrt($dyx * $dyx + $dzx * $dzx + $dyy * $dyy + $dzy * $dzy) * 12 - 1;
+                $aa = $aa < 0 ? 0.0 : ($aa > 1 ? 1.0 : $aa);
+                $rr = 0.315;
+                if ($aa < 1) {
+                    $nz = $vnoise($wx / 2, $wy / 2, $wz / 2);
+                    $py = $wy + $nz;
+                    $pz = $wz + $nz;
+                    $q = 4 * sqrt($py * $py + $pz * $pz);
+                    $q += $vnoise($q, $q, $q);
+                    $q -= floor($q);
+                    $s1 = ($q - 0.4) / 0.4;
+                    $s1 = $s1 < 0 ? 0.0 : ($s1 > 1 ? 1.0 : $s1);
+                    $s2 = ($q - 0.83) / 0.17;
+                    $s2 = $s2 < 0 ? 0.0 : ($s2 > 1 ? 1.0 : $s2);
+                    $rr = ($s1 * $s1 * (3 - 2 * $s1)) - ($s2 * $s2 * (3 - 2 * $s2));
+                    $rr += (0.315 - $rr) * $aa;
+                }
+                $dw = 0.1 * (0.315 - $rr);
+                $ar = $tint[0] + $dw;
+                $ag = $tint[1] + $dw;
+                $ab = $tint[2] + $dw;
             } elseif ($mode === 2) {
                 $lx = ($P[5][0] * $x + $P[5][1] * $y + $P[5][2]) * $w;
                 $ly = ($P[6][0] * $x + $P[6][1] * $y + $P[6][2]) * $w;
@@ -121,6 +190,9 @@ trait FastRaster {
             $r = $ar * $lit;
             $gg = $ag * $lit;
             $bb = $ab * $lit;
+            $r += $dr;
+            $gg += $dg;
+            $bb += $db;
             if ($T['studs']) {
                 $lny = ($P[10][0] * $x + $P[10][1] * $y + $P[10][2]) * $w;
                 if ($lny > 0.99) {

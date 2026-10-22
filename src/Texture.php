@@ -11,6 +11,10 @@ final class Texture {
     public $cut = true;
     public $hasAlpha = false;
     public $rust = false;
+    // textura somada a cor ja iluminada (colour_op_ex add_signed do Roblox 2009): cor*luz + (tex - 0.5)
+    public $addSigned = false;
+    // escala de uv por stud (numero) ou matriz 2x3 sobre a posicao (madeira)
+    public $uvm = null;
 
     function __construct(Img $im, bool $hat = false) {
         if ($hat) {

@@ -102,6 +102,52 @@ $r = (new Vanilla\Avatar(['assetBase' => 'https://your.host/asset/?id=', 'cacheD
 file_put_contents('thumb.png', $r['png']);
 ```
 
+## rendering a place
+
+`place.php` renders a place (an old `.rbxl`, xml or binary) into a cover image. same idea as `avatar.php`: you give it the place asset id, it downloads the place from your asset host, draws it and sends back an image.
+
+```
+place.php?id=1818&size=1050x575
+```
+
+| param | what it does |
+|---|---|
+| `id` | the place asset id. required, numbers only |
+| `size` | `WIDTHxHEIGHT`, from 48x48 up to 1920x1080. `1050x575` by default. `x` and `y` work too |
+| `format` | `png` (default), `webp` or `jpg`. png and webp keep transparency, jpg gets a solid background |
+| `bg` | background colour for jpg as hex, `ffffff` by default |
+
+the place is fetched from `assetBase` + `id`, so it has to be on your `assetBase` host (or one in `allowedHosts`). if your places live somewhere else, set `placeBase` in `config.php` and the id gets added to the end of that instead.
+
+extra settings for `config.php` (all optional):
+
+| setting | what it does |
+|---|---|
+| `placeBase` | where places are downloaded from, `assetBase` by default |
+| `placeMaxMB` | biggest place file it will download, `32` by default |
+| `maxConcurrentPlaces` | how many place renders run at once, `1` by default. they are slow and use a lot of memory, so keep it low |
+
+the first render of a place takes a while (seconds, not the half second of an avatar) and is cached after that, so put the url in an `<img>` and the next requests are instant. the cache follows `cacheSeconds` and `cacheMaxMB` like avatar renders. the response has an `X-Vanilla-Notes` header with anything the renderer skipped (the same lines the terminal prints as `aviso:`). php needs 512 MB of memory for this, `place.php` already requests it.
+
+errors: `400` bad parameter, `404` place not found on the host, `502` the host could not be reached, `503` too many renders running, `500` the render failed.
+
+you can still run it from the terminal on a file on your machine:
+
+```
+php place.php meu.rbxl capa.png 1050 575
+```
+
+or from php:
+
+```php
+require 'src/Vanilla.php';
+$renderer = new Vanilla\Avatar(['assetBase' => 'https://your.host/asset/?id=', 'cacheDir' => __DIR__ . '/cache']);
+file_put_contents('capa.png', $renderer->renderPlace(file_get_contents('meu.rbxl'), 1050, 575));
+foreach ($renderer->placeNotes as $note) {
+    echo $note, "\n";
+}
+```
+
 ## 2016 rendering option
 
 Append `&renderer=2016` to an existing render URL:
@@ -134,6 +180,7 @@ you already have the charapp you give rcc. instead of sending it to rcc, put it 
 
 ```
 avatar.php            the endpoint, reads the request and sends back the png
+place.php              the place endpoint, renders a place into a cover image (also runs from the terminal)
 config.php            your settings
 src/Vanilla.php       the renderer, render() is the entry point
 src/CharApp.php       reads charapp links and lists
