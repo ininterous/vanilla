@@ -118,9 +118,10 @@ trait Scene {
             }
             $center = [($lo[0] + $hi[0]) / 2, ($lo[1] + $hi[1]) / 2, ($lo[2] + $hi[2]) / 2];
             $radius = sqrt(($hi[0] - $lo[0]) ** 2 + ($hi[1] - $lo[1]) ** 2 + ($hi[2] - $lo[2]) ** 2) / 2;
-            $fov = self::CAM_FOV * M_PI / 180;
-            $dist = self::CAM_ZOOM * $radius / tan($fov / 2);
-            $cd = self::norm(self::CAM_DIR);
+            $cam = ($this->camOverride ?? []) + $this->camera;
+            $fov = $cam['fov'] * M_PI / 180;
+            $dist = $cam['zoom'] * $radius / tan($fov / 2);
+            $cd = self::norm($cam['dir']);
             $eye = [$center[0] + $cd[0] * $dist, $center[1] + $cd[1] * $dist, $center[2] + $cd[2] * $dist];
             $vp = self::mul4(self::perspective($fov, $W / $H, 0.1, 200), self::lookAt($eye, $center, [0, 1, 0]));
 
@@ -201,7 +202,7 @@ trait Scene {
             [$base['leftArm'], $cfs['Left Arm'], 1, null, $upTex, $studs, [0.5, 1, 0.5]],
             [$base['rightLeg'], $cfs['Right Leg'], 1, null, $loTex, false, null],
             [$base['leftLeg'], $cfs['Left Leg'], 1, null, $loTex, false, null],
-            [$base['head'], $cfs['Head'], 2, $look['colors']['head'], new Texture($faceImg), false, null],
+            [$base['head'], $cfs['Head'], 2, $look['colors']['head'], new Texture($faceImg), false, null, [1, 1, 1], 'head'],
         ];
         if ($this->renderer === '2016') {
             foreach (['torso', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg'] as $i => $part) { $calls[$i][4] = $bodyTextures2016[$part]; }

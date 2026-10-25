@@ -3,20 +3,42 @@ namespace Vanilla;
 
 // Source notes and the limits of the software profile are in docs/2016-renderer.md.
 trait RenderProfiles {
-    const RENDERERS = ['2012', '2016'];
+    const RENDERERS = ['2009', '2012', '2016'];
     private $renderer = '2012';
     private $defaultRenderer = '2012';
     private $lighting = [];
+    private $camera = [];
+    private $camOverride = null;
+    private $tune = [];
+
+    public function tune(array $t): void {
+        $this->tune = $t;
+    }
 
     public static function validateRenderer($renderer): string {
         if (!is_string($renderer) || !in_array($renderer, self::RENDERERS, true)) {
-            throw new \InvalidArgumentException('renderer is 2012 or 2016.');
+            throw new \InvalidArgumentException('renderer is 2009, 2012 or 2016.');
         }
         return $renderer;
     }
 
+    public function setCamera(?array $cam): void {
+        $this->camOverride = $cam;
+    }
+
     private function selectRenderer($renderer): void {
         $this->renderer = self::validateRenderer($renderer);
+        $this->camera = ['dir' => self::CAM_DIR, 'fov' => self::CAM_FOV, 'zoom' => self::CAM_ZOOM];
+        if ($this->renderer === '2009') {
+            // valores iniciais, a calibrar contra as referências
+            $this->camera['dir'] = [-0.3861, 0.4067, -0.8280];
+            $this->camera['fov'] = 60.00;
+            $this->lighting = array_replace(
+                ['ambient' => 0.62, 'key' => 0.50, 'fill' => 0.15, 'direction' => self::LAMP_DIR],
+                $this->tune['lighting'] ?? []
+            );
+            return;
+        }
         if ($this->renderer === '2012') {
             $this->lighting = ['ambient' => self::AMBIENT, 'key' => self::KEY, 'fill' => self::FILL, 'direction' => self::LAMP_DIR];
             return;
@@ -54,6 +76,10 @@ trait RenderProfiles {
     private function materialSpecular($material): array {
         if ($this->renderer === '2012' && (empty($this->placeMaterials) || (int)$material === 256)) {
             return [self::KS, self::SPEC_EXP];
+        }
+        if ($this->renderer === '2009') {
+            $s = $this->tune['spec'] ?? [0.6, 8];
+            return $material === 'head' ? $s : [0.08, 24];
         }
         // MaterialGenerator::getSpecular: byte intensity, exponent. No normal maps here.
         $table = [256 => [102, 9], 272 => [191, 81], 288 => [191, 81],

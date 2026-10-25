@@ -5,7 +5,7 @@
 <h1 align="center">vanilla</h1>
 
 <p align="center">
-  2012 style roblox avatar renders in plain php, with an experimental 2016 mode
+  2012 style roblox avatar renders in plain php, with experimental 2009 and 2016 modes
 </p>
 
 <p align="center">
@@ -14,7 +14,7 @@
 
 ---
 
-renders 2012 style roblox avatars in php. you give it a charapp (or asset ids and body colors) and it gives you back a png. runs on regular shared hosting, no gpu or webgl or anything.
+renders 2012 style roblox avatars in php (and, experimentally, 2009 and 2016 style ones). you give it a charapp (or asset ids and body colors) and it gives you back a png. runs on regular shared hosting, no gpu or webgl or anything.
 
 ## how it works
 
@@ -66,7 +66,7 @@ avatar.php?ids=1234,5678&colors=f5cd30,0d69ac,f5cd30,f5cd30,a4bd47,a4bd47&size=1
 | `colors` | head, torso, left arm, right arm, left leg, right leg as `rrggbb` |
 | `size` | `150x200` (default), `180x220`, `100x100`, `352x352`, `420x420`, `512x512`, `150x150`, `48x48`. `x` and `y` work too |
 | `view` | `body` (default) or `head` for a headshot |
-| `renderer` | `2012` (default) or experimental `2016`; separate lighting, material highlights, and legacy particle effects |
+| `renderer` | `2012` (default), or experimental `2009` or `2016`. each one has its own camera, lighting and material highlights (2016 also has legacy particle effects) |
 | `format` | `png` (default), `webp` or `jpg`. png and webp keep transparency, jpg gets a solid background |
 | `bg` | background colour for jpg as hex, `ffffff` by default |
 | `smooth` | `1` (default) or `0` for hard edges |
@@ -148,6 +148,67 @@ foreach ($renderer->placeNotes as $note) {
 }
 ```
 
+## 2009 rendering option
+
+an experimental profile that tries to look like the avatar thumbnails from 2009. append `&renderer=2009`:
+
+```
+avatar.php?ids=1234,5678&size=150x200&renderer=2009
+```
+
+compared to the 2012 look it has flatter lighting with more ambient light, a soft and wide highlight (weak on the flat body parts, most visible on the rounded head), and its own camera, turned about 25 degrees and tilted about 24 degrees down with a 60 degree field of view. the 2012 body studs and leg inlets stay. it uses the same assets and request parameters as the other modes, and its png cache and etags are separate.
+
+you can also set `renderer` in `config.php` (or `config.local.php`) to make it the endpoint default. in php pass `'renderer' => '2009'` to `render()` or to the `Avatar` constructor.
+
+it is **not verified as a 1:1 2009 reproduction**. the camera was fitted to one reference thumbnail by comparing silhouettes, and the lighting and highlight values are starting points that were tuned by eye. the body part meshes in `data/` are the same ones the 2012 mode uses, so their edge rounding is not 2009 specific.
+
+### tuning the profile from php
+
+two methods on `Avatar` let you change the profile without editing the source. they only affect php callers, not the url parameters.
+
+```php
+$avatar = new Vanilla\Avatar([
+    'assetBase' => 'https://your.host/asset/?id=',
+    'cacheDir' => __DIR__ . '/cache',
+    'renderer' => '2009',
+]);
+
+// camera for the body view: dir is the direction from the avatar to the camera
+$avatar->setCamera(['dir' => [-0.3861, 0.4067, -0.8280], 'fov' => 60.0]);
+
+// 2009 lighting and highlight: spec is [intensity, exponent], a lower exponent spreads the highlight out
+$avatar->tune([
+    'spec' => [0.6, 8],
+    'lighting' => ['ambient' => 0.62, 'key' => 0.50, 'fill' => 0.15],
+]);
+```
+
+`setCamera` takes `dir`, `fov` (degrees) and `zoom`, and applies to the body view of the 2009 and 2012 modes (the head view and the 2016 mode have their own cameras). `tune` only applies to the 2009 mode. pass `null` to `setCamera` to go back to the profile's camera.
+
+the camera direction can be built from two angles, `a` for the turn and `e` for the tilt:
+
+```
+dir = [-sin(a) * cos(e), sin(e), -cos(a) * cos(e)]
+```
+
+the render cache used by `avatar.php` does not include these overrides, so when you change the built-in values in `src/parts/RenderProfiles.php`, change `RENDER_VERSION` in `avatar.php` too or you will keep getting the old png.
+
+### calibration scripts
+
+two small scripts for adjusting the 2009 profile. both run from the terminal in the vanilla folder.
+
+```
+php fit.php ref.png
+```
+
+`fit.php` searches for the camera that best matches a reference thumbnail. it renders many combinations of turn, tilt and field of view, compares the silhouette of each one with the reference (colors, clothes and lighting do not count) and prints the best five together with the two lines to paste into the 2009 profile. it also writes `cache/fit_compare.png` with the reference on the left and the best render on the right. the reference should show the avatar without a hat or gear, in the same pose vanilla draws.
+
+```
+php spec.php
+```
+
+`spec.php` writes `cache/spec_sheet.png`, a sheet of nine purple avatars with different highlight settings (rows are the intensity and columns are the exponent), so you can pick the one that looks closest to your reference by eye.
+
 ## 2016 rendering option
 
 Append `&renderer=2016` to an existing render URL:
@@ -157,7 +218,7 @@ avatar.php?ids=1234,5678&size=420x420&renderer=2016
 ```
 
 Use `renderer=2012` for the existing appearance. You can also set `renderer` in
-`config.php` (or `config.local.php`) to change the endpoint default. Both modes
+`config.php` (or `config.local.php`) to change the endpoint default. All modes
 share the same assets and request parameters; their PNG caches and ETags are separate.
 In PHP, pass `'renderer' => '2016'` to `render()` or to the `Avatar` constructor.
 A per-request choice only affects that request.
@@ -182,10 +243,13 @@ you already have the charapp you give rcc. instead of sending it to rcc, put it 
 avatar.php            the endpoint, reads the request and sends back the png
 place.php              the place endpoint, renders a place into a cover image (also runs from the terminal)
 config.php            your settings
+fit.php               finds the 2009 camera that best matches a reference thumbnail
+spec.php              makes a sheet of 2009 highlight settings to compare
 src/Vanilla.php       the renderer, render() is the entry point
 src/CharApp.php       reads charapp links and lists
 src/Net.php           all outside requests, public addresses only
 src/parts/            the renderer split by job (assets, meshes, look building, particles, scene, rasterisers)
+src/parts/RenderProfiles.php   the 2009, 2012 and 2016 profiles: camera, lighting and highlights
 src/Rbxm.php          reads roblox models (xml and binary)
 src/Img.php           image decoding and drawing
 data/                 the body meshes and textures
